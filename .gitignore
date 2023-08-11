@@ -145,4 +145,5 @@ cython_debug/
 .idea
 r.txt
 test.py
+test2.py
 quiz-questions

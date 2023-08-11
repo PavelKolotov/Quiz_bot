@@ -25,7 +25,7 @@ def get_questions_and_answer():
 
     for match in re.finditer(pattern, questions_text, re.DOTALL):
         num, question, answer = match.groups()
-        questions[f'question {num}'] = {'q': question.strip(), 'a': answer.strip()}
+        questions[f'{num}'] = {'q': question.strip(), 'a': answer.strip()}
 
     return questions
 
