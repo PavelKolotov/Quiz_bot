@@ -1,16 +1,10 @@
 import logging
 import re
+from enum import Enum
 
 from environs import Env
-from enum import Enum
 from telegram import Update, ReplyKeyboardMarkup
-from telegram.ext import (
-    Application,
-    CommandHandler,
-    ContextTypes,
-    MessageHandler,
-    filters,
-    ConversationHandler)
+from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters, ConversationHandler
 
 from text_qa_parser import get_questions_and_answer
 from redis_db import RedisDB
@@ -21,7 +15,7 @@ logging.basicConfig(
     level=logging.INFO
 )
 logging.getLogger('httpx').setLevel(logging.WARNING)
-logger = logging.getLogger(__name__)
+logger = logging.getLogger('TG_BOT')
 
 
 class BotActions(Enum):
@@ -39,11 +33,17 @@ markup = ReplyKeyboardMarkup(quiz_keyboard, one_time_keyboard=True)
 
 
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_id = context.bot_data['user_id']
+    dev_chat_id = context.bot_data['dev_chat_id']
     if isinstance(context.error, KeyError):
         context.bot_data['questions'] = get_questions_and_answer()
-        user_id = context.bot_data['user_id']
         await context.bot.send_message(user_id, f'Вопросы данной викторины закончились! '
                                        f'Чтобы начать новую нажми "Новый вопрос"')
+    elif isinstance(context.error, Exception):
+        error_class = context.error.__class__.__name__
+        error_text = str(context.error)
+        error_message = f"{error_class}: {error_text}"
+        await context.bot.send_message(dev_chat_id, error_message)
 
 
 def ask_answer(redis, user_id, questions):
@@ -57,7 +57,6 @@ async def start(update, context) -> BotActions:
     user = update.effective_user
     context.bot_data['user_id'] = user.id
     redis.r.hset(user.id, 'question_counter', 0)
-    logger.info("Вызван метод start")
     await update.message.reply_text(
         rf'Привет {user.first_name}! Я бот для викторины!',
         reply_markup=markup,
@@ -67,10 +66,8 @@ async def start(update, context) -> BotActions:
 
 
 async def ask_new_question(update: Update, context: ContextTypes.DEFAULT_TYPE) -> BotActions:
-    logger.info("Вызван метод ask_new_question")
     redis = context.bot_data['redis']
     questions = context.bot_data['questions']
-    print(questions)
     user_id = update.effective_user.id
     question_num = redis.increment_counter(questions, user_id)
     question = redis.get_question(questions, user_id, question_num)
@@ -80,7 +77,6 @@ async def ask_new_question(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
 
 async def handle_give_up(update: Update, context: ContextTypes.DEFAULT_TYPE) -> BotActions:
-    logger.info("Вызван метод handle_give_up")
     redis = context.bot_data['redis']
     questions = context.bot_data['questions']
     user_id = update.effective_user.id
@@ -92,7 +88,6 @@ async def handle_give_up(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 
 async def check_answer(update: Update, context: ContextTypes.DEFAULT_TYPE) -> BotActions:
-    logger.info("Вызван метод text")
     redis = context.bot_data['redis']
     questions = context.bot_data['questions']
     user_id = update.effective_user.id
@@ -130,6 +125,7 @@ def main() -> None:
     application = Application.builder().token(tg_bot_api_key).build()
     application.bot_data['redis'] = redis
     application.bot_data['questions'] = questions
+    application.bot_data['dev_chat_id'] = env.int('DEVELOPER_CHAT_ID')
 
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler("start", start)],
