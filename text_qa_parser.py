@@ -2,6 +2,8 @@ import os
 import random
 import re
 
+from environs import Env
+
 
 def open_random_quiz_questions(path):
     """
@@ -36,7 +38,10 @@ def get_questions_and_answer():
 
     :return: Словарь с вопросами и ответами или пустой словарь в случае ошибки
     """
-    questions_text = open_random_quiz_questions('quiz-questions')
+    env = Env()
+    env.read_env()
+    questions_path = env.str('QUESTIONS_PATH')
+    questions_text = open_random_quiz_questions(questions_path)
     if not questions_text:
         return {}
 

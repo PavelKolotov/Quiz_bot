@@ -1,0 +1,5 @@
+environs==9.5.0
+python-telegram-bot==20.4
+redis==4.6.0
+telegram-handler==1.4.4
+vk-api==11.9.9
