@@ -113,7 +113,7 @@ async def handle_give_up(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     answer = ask_answer(redis, user_id, questions)
 
     if answer:
-        await update.message.reply_text(f'Вот тебе правильный ответ: {answer} \n'
+        await update.message.reply_text(f'Правильный ответ: {answer} \n'
                                         f'Чтобы продолжить нажми "Новый вопрос"')
     else:
         await context.bot.send_message(user_id, f'Вопросы данной викторины закончились! '
@@ -133,9 +133,9 @@ async def check_answer(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Bo
     # Try to get answer only once
     correct_answer = ask_answer(redis, user_id, questions)
     given_answer = update.message.text.lower()
-    correct_answer = re.sub(r'( \(.+\))|\.$', '', correct_answer).lower()
+    correct_answer = re.sub(r'( \(.+\))|\.$', '', correct_answer)
 
-    if given_answer == correct_answer:
+    if given_answer == correct_answer.lower():
         await update.message.reply_text('Правильно! Поздравляю! Для следующего вопроса нажми "Новый вопрос"')
         logger.info(f"User {user_id} answered correctly.")
     else:

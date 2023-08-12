@@ -3,23 +3,43 @@ import random
 import re
 
 
-def open_random_qitz_questions(path):
-    files = [file for file in os.listdir(path) if file.endswith('.txt')]
-    if files:
+def open_random_quiz_questions(path):
+    """
+    Открывает случайный текстовый файл из указанной директории.
+
+    :param path: Путь к директории с текстовыми файлами
+    :return: Содержимое выбранного файла или None в случае ошибки или отсутствия содержимого
+    """
+    try:
+        files = [file for file in os.listdir(path) if file.endswith('.txt')]
+
+        if not files:
+            print('В папке не найдено ни одного текстового файла (.txt)')
+            return
+
         random_file = random.choice(files)
         file_path = os.path.join(path, random_file)
-        try:
-            with open(file_path, 'r', encoding='koi8-r') as file:
-                content = file.read()
-                return content
-        except IOError:
-            print('Ошибка при открытии файла.')
-    else:
-        print('В папке не найдено ни одного текстового файла (.txt)')
+
+        with open(file_path, 'r', encoding='koi8-r') as file:
+            content = file.read()
+            if not content:
+                print('Выбранный файл пуст.')
+                return
+            return content
+    except (FileNotFoundError, PermissionError) as e:
+        print(f'Ошибка при открытии файла: {e}')
 
 
 def get_questions_and_answer():
-    questions_text = open_random_qitz_questions('quiz-questions')
+    """
+    Извлекает вопросы и ответы из случайного текстового файла из папки 'quiz-questions'.
+
+    :return: Словарь с вопросами и ответами или пустой словарь в случае ошибки
+    """
+    questions_text = open_random_quiz_questions('quiz-questions')
+    if not questions_text:
+        return {}
+
     pattern = r'Вопрос (\d+):\n(.*?)\nОтвет:\n(.*?)\n'
     questions = {}
 
@@ -29,10 +49,18 @@ def get_questions_and_answer():
 
     return questions
 
+
 def ask_answer(redis, user_id, questions):
+    """
+    Извлекает ответ на текущий вопрос из Redis для указанного пользователя.
+
+    :param redis: Экземпляр RedisDB
+    :param user_id: ID пользователя
+    :param questions: Словарь с вопросами и ответами
+    :return: Текст ответа или False в случае ошибки
+    """
     try:
         question_num = int(redis.r.hget(user_id, 'question_counter'))
-        answer = redis.get_answer(questions, user_id, question_num)
-        return answer
+        return redis.get_answer(questions, user_id, question_num)
     except KeyError:
         return False
