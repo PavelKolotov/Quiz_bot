@@ -29,3 +29,10 @@ def get_questions_and_answer():
 
     return questions
 
+def ask_answer(redis, user_id, questions):
+    try:
+        question_num = int(redis.r.hget(user_id, 'question_counter'))
+        answer = redis.get_answer(questions, user_id, question_num)
+        return answer
+    except KeyError:
+        return False

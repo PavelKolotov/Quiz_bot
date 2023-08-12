@@ -6,7 +6,7 @@ from environs import Env
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters, ConversationHandler
 
-from text_qa_parser import get_questions_and_answer
+from text_qa_parser import get_questions_and_answer, ask_answer
 from redis_db import RedisDB
 
 
@@ -33,6 +33,19 @@ markup = ReplyKeyboardMarkup(quiz_keyboard, one_time_keyboard=True)
 
 
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    Обрабатывает ошибки, возникающие во время выполнения бота.
+
+    При возникновении KeyError сообщает пользователю о том, что вопросы закончились.
+    Для всех других ошибок отправляет уведомление разработчику.
+
+    Args:
+    - update: объект Update, предоставляемый Telegram API.
+    - context: контекст, предоставляемый telegram.ext.
+
+    Returns:
+    - None
+    """
     user_id = context.bot_data['user_id']
     dev_chat_id = context.bot_data['dev_chat_id']
     if isinstance(context.error, KeyError):
@@ -46,13 +59,20 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> N
         await context.bot.send_message(dev_chat_id, error_message)
 
 
-def ask_answer(redis, user_id, questions):
-    question_num = int(redis.r.hget(user_id, 'question_counter'))
-    answer = redis.get_answer(questions, user_id, question_num)
-    return answer
-
-
 async def start(update, context) -> BotActions:
+    """
+    Запускает бота и приветствует пользователя.
+
+    Инициирует счетчик вопросов для пользователя в базе данных Redis и
+    отправляет приветственное сообщение.
+
+    Args:
+    - update: объект Update, предоставляемый Telegram API.
+    - context: контекст, предоставляемый telegram.ext.
+
+    Returns:
+    - BotActions.CHOOSING: следующее состояние бота.
+    """
     redis = context.bot_data['redis']
     user = update.effective_user
     context.bot_data['user_id'] = user.id
@@ -66,43 +86,69 @@ async def start(update, context) -> BotActions:
 
 
 async def ask_new_question(update: Update, context: ContextTypes.DEFAULT_TYPE) -> BotActions:
+    """
+    Задает пользователю новый вопрос из викторины.
+    """
     redis = context.bot_data['redis']
     questions = context.bot_data['questions']
     user_id = update.effective_user.id
     question_num = redis.increment_counter(questions, user_id)
     question = redis.get_question(questions, user_id, question_num)
-    await update.message.reply_text(question)
 
+    logger.info(f"Asked question number {question_num} to user {user_id}")
+
+    await update.message.reply_text(question)
     return BotActions.CHOOSING
 
 
 async def handle_give_up(update: Update, context: ContextTypes.DEFAULT_TYPE) -> BotActions:
+    """
+    Обрабатывает действие пользователя, чтобы отказаться от вопроса.
+    """
     redis = context.bot_data['redis']
     questions = context.bot_data['questions']
     user_id = update.effective_user.id
+
+    # Try to get answer only once
     answer = ask_answer(redis, user_id, questions)
 
-    await update.message.reply_text(f'Вот тебе правлиьный ответ: {answer} \n'
-                              f'Чтобы продолжить нажми "Новый вопрос"')
+    if answer:
+        await update.message.reply_text(f'Вот тебе правильный ответ: {answer} \n'
+                                        f'Чтобы продолжить нажми "Новый вопрос"')
+    else:
+        await context.bot.send_message(user_id, f'Вопросы данной викторины закончились! '
+                                                f'Чтобы начать новую нажми "Новый вопрос"')
+    logger.info(f"User {user_id} gave up on the question.")
     return BotActions.CHOOSING
 
 
 async def check_answer(update: Update, context: ContextTypes.DEFAULT_TYPE) -> BotActions:
+    """
+    Сравнивает ответ пользователя с правильным ответом.
+    """
     redis = context.bot_data['redis']
     questions = context.bot_data['questions']
     user_id = update.effective_user.id
-    answer = ask_answer(redis, user_id, questions)
-    answer = re.sub(r'( \(.+\))|\.$', '', answer)
-    if update.message.text.lower() == answer.lower():
+
+    # Try to get answer only once
+    correct_answer = ask_answer(redis, user_id, questions)
+    given_answer = update.message.text.lower()
+    correct_answer = re.sub(r'( \(.+\))|\.$', '', correct_answer).lower()
+
+    if given_answer == correct_answer:
         await update.message.reply_text('Правильно! Поздравляю! Для следующего вопроса нажми "Новый вопрос"')
+        logger.info(f"User {user_id} answered correctly.")
     else:
         await update.message.reply_text('Не верно, попробуй еще!')
+        logger.info(f"User {user_id} answered incorrectly.")
 
     return BotActions.CHOOSING
 
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Cancels and ends the conversation."""
+    """
+    Отменяет и завершает разговор.
+    """
     user = update.message.from_user
     logger.info("User %s canceled the conversation.", user.first_name)
     await update.message.reply_text(
