@@ -76,6 +76,7 @@ async def start(update, context) -> BotActions:
     redis = context.bot_data['redis']
     user = update.effective_user
     context.bot_data['user_id'] = user.id
+    context.bot_data['questions'] = get_questions_and_answer()
     redis.r.hset(user.id, 'question_counter', 0)
     await update.message.reply_text(
         rf'Привет {user.first_name}! Я бот для викторины!',
@@ -152,7 +153,7 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user = update.message.from_user
     logger.info("User %s canceled the conversation.", user.first_name)
     await update.message.reply_text(
-        'Пока! Надеюсь, мы ещё сыграем с тобой в викторину!'
+        'Пока! Надеюсь, мы ещё сыграем с тобой в викторину! Для начала игры нажми /start'
     )
     return ConversationHandler.END
 
@@ -167,10 +168,8 @@ def main() -> None:
     redis_username = env.str('REDIS_USERNAME')
     redis_password = env.str('REDIS_PASSWORD')
     redis = RedisDB(redis_host, redis_port, redis_db, redis_username, redis_password)
-    questions = get_questions_and_answer()
     application = Application.builder().token(tg_bot_api_key).build()
     application.bot_data['redis'] = redis
-    application.bot_data['questions'] = questions
     application.bot_data['dev_chat_id'] = env.int('DEVELOPER_CHAT_ID')
 
     conv_handler = ConversationHandler(
