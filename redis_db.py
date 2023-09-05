@@ -29,7 +29,7 @@ class RedisDB:
         :param question_num: Номер вопроса
         :return: Текст вопроса
         """
-        question = questions[f'{question_num}']['q']
+        question = questions[question_num]['q']
         self.r.hset(user_id, f'q:{question_num}', question)
         return question
 
@@ -42,7 +42,7 @@ class RedisDB:
         :param question_num: Номер вопроса
         :return: Текст ответа
         """
-        answer = questions[f'{question_num}']['a']
+        answer = questions[question_num]['a']
         self.r.hset(user_id, f'a:{question_num}', answer)
         return answer
 
@@ -56,8 +56,9 @@ class RedisDB:
         :param user_id: ID пользователя
         :return: Значение счетчика после увеличения
         """
-        if int(self.r.hget(user_id, 'question_counter')) < len(questions):
+        if int(self.r.hget(user_id, 'question_counter')) < len(questions) - 1:
             question_num = self.r.hincrby(user_id, 'question_counter', 1)
         else:
-            question_num = self.r.hset(user_id, 'question_counter', 0)
+            question_num = self.r.hincrby(user_id, 'question_counter', 1)
+            self.r.hset(user_id, 'question_counter', 0)
         return question_num

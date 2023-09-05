@@ -6,15 +6,10 @@ from environs import Env
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters, ConversationHandler
 
-from text_qa_parser import get_questions_and_answer, ask_answer
+from text_qa_parser import get_answer, get_random_files_from_directory, get_questions_from_multiple_files
 from redis_db import RedisDB
 
 
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
-)
-logging.getLogger('httpx').setLevel(logging.WARNING)
 logger = logging.getLogger('TG_BOT')
 
 
@@ -36,9 +31,6 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> N
     """
     Обрабатывает ошибки, возникающие во время выполнения бота.
 
-    При возникновении KeyError сообщает пользователю о том, что вопросы закончились.
-    Для всех других ошибок отправляет уведомление разработчику.
-
     Args:
     - update: объект Update, предоставляемый Telegram API.
     - context: контекст, предоставляемый telegram.ext.
@@ -46,13 +38,8 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> N
     Returns:
     - None
     """
-    user_id = context.bot_data['user_id']
     dev_chat_id = context.bot_data['dev_chat_id']
-    if isinstance(context.error, KeyError):
-        context.bot_data['questions'] = get_questions_and_answer()
-        await context.bot.send_message(user_id, f'Вопросы данной викторины закончились! '
-                                       f'Чтобы начать новую нажми "Новый вопрос"')
-    elif isinstance(context.error, Exception):
+    if isinstance(context.error, Exception):
         error_class = context.error.__class__.__name__
         error_text = str(context.error)
         error_message = f"{error_class}: {error_text}"
@@ -76,7 +63,6 @@ async def start(update, context) -> BotActions:
     redis = context.bot_data['redis']
     user = update.effective_user
     context.bot_data['user_id'] = user.id
-    context.bot_data['questions'] = get_questions_and_answer()
     redis.r.hset(user.id, 'question_counter', 0)
     await update.message.reply_text(
         rf'Привет {user.first_name}! Я бот для викторины!',
@@ -109,9 +95,7 @@ async def handle_give_up(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     redis = context.bot_data['redis']
     questions = context.bot_data['questions']
     user_id = update.effective_user.id
-
-    # Try to get answer only once
-    answer = ask_answer(redis, user_id, questions)
+    answer = get_answer(redis, user_id, questions)
 
     if answer:
         await update.message.reply_text(f'Правильный ответ: {answer} \n'
@@ -131,8 +115,7 @@ async def check_answer(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Bo
     questions = context.bot_data['questions']
     user_id = update.effective_user.id
 
-    # Try to get answer only once
-    correct_answer = ask_answer(redis, user_id, questions)
+    correct_answer = get_answer(redis, user_id, questions)
     given_answer = update.message.text.lower()
     correct_answer = re.sub(r'( \(.+\))|\.$', '', correct_answer)
 
@@ -167,10 +150,20 @@ def main() -> None:
     redis_db = env.int('REDIS_DB')
     redis_username = env.str('REDIS_USERNAME')
     redis_password = env.str('REDIS_PASSWORD')
+    num_random_files = env.int('NUM_RANDOM_FILES', default='5')
+    questions_path = env.str('QUESTIONS_PATH', default='questions')
+    random_files = get_random_files_from_directory(questions_path, num_random_files)
+    questions = get_questions_from_multiple_files(random_files)
     redis = RedisDB(redis_host, redis_port, redis_db, redis_username, redis_password)
     application = Application.builder().token(tg_bot_api_key).build()
     application.bot_data['redis'] = redis
     application.bot_data['dev_chat_id'] = env.int('DEVELOPER_CHAT_ID')
+    application.bot_data['questions'] = questions
+    logging.basicConfig(
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        level=logging.INFO
+    )
+    logging.getLogger('httpx').setLevel(logging.WARNING)
 
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler("start", start)],
